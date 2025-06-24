@@ -36,10 +36,31 @@ bool MissingItems(int MissedItem) {
     return (MissedItem % 2 == 0);
 }
 
-// Funtion to check for commas 
-bool CheckCommas() {
-    
+//Delete space and enters so it easier to operate 
+string ClearRead(const string& fileName){
+    fstream file("Json.txt");
+    string result;
+    char c;
+    bool inString = false;
+
+    while (file.get(c)){
+        if(c =='"'){
+            result = result + c;
+            inString = !inString; 
+        }
+        else if (inString) {
+            result = result + c;
+        }
+        else{
+            if(!isspace(c)) {
+                result = result + c;
+            }
+        }
+    }
+    return result;
 }
+
+
 
 int main(){
     
@@ -63,6 +84,27 @@ int main(){
         }
     
         if (choice == 'd') {
+            string Clear_Read = ClearRead("Json.txt");
+            for(int i = 0; i < Clear_Read.length(); i++) {
+                
+                char nextCharter = Clear_Read[i];
+                int doubleQuotes = 0;
+                if (nextCharter == '"'){
+                    doubleQuotes++;
+                    
+                    if (doubleQuotes % 2 == 0){
+                    nextCharter ++;
+                    
+                    if(nextCharter != ':' && nextCharter != ',' && nextCharter != ']' && nextCharter != '}'){
+                        Valid = false;
+                        }
+                    }
+                }
+                
+                
+            }
+            cout << Clear_Read;
+            
             CounterForDualElements("Json.txt", Brackets, SquareBrackets, Q_marks);
             if (!MissingItems(Brackets)) {
                 cout << "Brackets not paired!" << endl;
@@ -76,7 +118,7 @@ int main(){
                 cout << "Quotes not paired!" << endl;
                 Valid = false;
             }
-
+            
             
 
             cout << "Final result: " << (Valid ? "VALID" : "INVALID") << endl;
