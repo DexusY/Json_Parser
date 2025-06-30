@@ -7,6 +7,7 @@ using namespace std;
 char choice;
 bool Valid = true;
 int Brackets = 0, SquareBrackets = 0, Q_marks = 0;
+int OpenBracket = 0, OpenSquareBracket = 0, EndBracket = 0, EndSquareBracket = 0;
 int lineNumberForChar[100000];
 
 void showMenu() {
@@ -62,6 +63,16 @@ void CounterForDualElements(const string& fileName, int& Brackets, int& SquareBr
     }
 }
 
+void CounterForStartOrEndingBrackets(const string& fileName, int& OpenBracket, int& OpenSquareBracket, int& EndBracket, int& EndSquareBracket) {
+    ifstream file(fileName);
+    char ch;
+    while (file.get(ch)) {
+        if (ch == '{') OpenBracket++;
+        if (ch == '[') OpenSquareBracket++;
+        if (ch == '}') EndBracket++;
+        if (ch == ']') EndSquareBracket++;
+    }
+}
 bool MissingItems(int x) {
     return x % 2 == 0;
 }
@@ -78,7 +89,35 @@ bool startsWithNumber(const string& json, int index) {
 
     return false;
 }
+bool isUnquotedWord(const string& json, int index) {
+    int start = index;
 
+    while (index < json.length() && isspace(static_cast<unsigned char>(json[index]))) {
+        index++;
+    }
+
+    if (index >= json.length()) return false;
+
+    if (json[index] == '"') return false;
+
+    if (isalpha(static_cast<unsigned char>(json[index]))) {
+        string word;
+        while (index < json.length() &&
+               (isalpha(static_cast<unsigned char>(json[index])) ||
+                isdigit(static_cast<unsigned char>(json[index])) ||
+                json[index] == '_')) {
+            word += json[index];
+            index++;
+        }
+        if (word == "true" || word == "false" || word == "null") {
+            return false;
+        } else {
+            return true;  
+        }
+    }
+
+    return false;
+}
 bool validateJsonContent(const string& json) {
     int doubleQuotes = 0;
     bool firstErrorReported = false;
@@ -163,6 +202,14 @@ bool validateJsonContent(const string& json) {
             }
 
         }
+        if ((current == '{' || current == ',' || current == ':') && isUnquotedWord(json, i + 1)) {
+            Valid = false;
+            if (!firstErrorReported) {
+                cout << "Błąd: Słowo bez cudzysłowu w linii: "
+                    << lineNumberForChar[i + 1] << endl;
+                firstErrorReported = true;
+    }
+}
                     
     }
 
@@ -190,6 +237,7 @@ void handleValidation() {
     validateJsonContent(Clear_Read);
 
     CounterForDualElements("Json.txt", Brackets, SquareBrackets, Q_marks);
+    CounterForStartOrEndingBrackets("Json.txt", OpenBracket, OpenSquareBracket, EndBracket, EndSquareBracket);
 
     if (!MissingItems(Brackets)) {
         cout << "Brackets not paired!" << endl;
@@ -204,6 +252,27 @@ void handleValidation() {
         Valid = false;
     }
 
+    if (OpenBracket != EndBracket) {
+        if( OpenBracket > EndBracket) {
+            cout << "brakuje '}' " << endl;
+            Valid = false;
+        } 
+        else {
+            cout << "brakuje '{' " << endl;
+            Valid = false;
+        }
+    }
+
+    if (OpenSquareBracket != EndSquareBracket) {
+        if( OpenSquareBracket > EndSquareBracket) {
+            cout << "brakuje ']' " << endl;
+            Valid = false;
+        } 
+        else {
+            cout << "brakuje '[' " << endl;
+            Valid = false;
+        }
+    }
     cout << Clear_Read << endl;
     cout << "Final result: " << (Valid ? "VALID" : "INVALID") << endl;
 }
