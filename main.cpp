@@ -1,25 +1,19 @@
 #include <iostream>
 #include <fstream>
 #include <string>
-#include <algorithm>
+#include <vector>
+#include <cctype>
+#include <unordered_map>
+
 using namespace std;
 
-char choice;
-bool Valid = true;
-int Brackets = 0, SquareBrackets = 0, Q_marks = 0;
-int OpenBracket = 0, OpenSquareBracket = 0, EndBracket = 0, EndSquareBracket = 0;
-int lineNumberForChar[100000];
+vector<int> lineForChar;
+bool isValid = true;
 
-void showMenu() {
-    cout << "Welcome to the JSON Parser!" << endl;
-    cout << "Press 'o' to open JSON file." << endl;
-    cout << "Press 'd' to validate JSON content." << endl;
-}
-
-string ClearRead(const string& fileName) {
-    ifstream file(fileName);
+string readJsonFile(const string& filename) {
+    ifstream file(filename);
     if (!file.is_open()) {
-        cerr << "Błąd: Nie udało się otworzyć pliku " << fileName << endl;
+        cerr << "Error: Failed to open file " << filename << endl;
         exit(1);
     }
 
@@ -27,7 +21,6 @@ string ClearRead(const string& fileName) {
     char c;
     bool inString = false;
     int currentLine = 1;
-    int index = 0;
 
     while (file.get(c)) {
         if (c == '\n') {
@@ -35,264 +28,140 @@ string ClearRead(const string& fileName) {
             continue;
         }
 
+        if (inString || !isspace(static_cast<unsigned char>(c))) {
+            result += c;
+            lineForChar.push_back(currentLine);
+        }
+
         if (c == '"') {
-            result += c;
-            lineNumberForChar[index++] = currentLine;
             inString = !inString;
-        } else if (inString) {
-            result += c;
-            lineNumberForChar[index++] = currentLine;
-        } else {
-            if (!isspace(static_cast<unsigned char>(c))) {
-                result += c;
-                lineNumberForChar[index++] = currentLine;
-            }
         }
     }
 
     return result;
 }
 
-void CounterForDualElements(const string& fileName, int& Brackets, int& SquareBrackets, int& Q_marks) {
-    ifstream file(fileName);
-    char ch;
-    while (file.get(ch)) {
-        if (ch == '{' || ch == '}') Brackets++;
-        if (ch == '[' || ch == ']') SquareBrackets++;
-        if (ch == '"') Q_marks++;
+bool checkBalanced(const string& json, char open, char close, const string& name) {
+    int count = 0;
+    for (char c : json) {
+        if (c == open) count++;
+        else if (c == close) count--;
     }
+    if (count != 0) {
+        cout << "Error: Unmatched number of characters " << open << "/" << close << "!" << endl;
+        isValid = false;
+        return false;
+    }
+    return true;
 }
 
-void CounterForStartOrEndingBrackets(const string& fileName, int& OpenBracket, int& OpenSquareBracket, int& EndBracket, int& EndSquareBracket) {
-    ifstream file(fileName);
-    char ch;
-    while (file.get(ch)) {
-        if (ch == '{') OpenBracket++;
-        if (ch == '[') OpenSquareBracket++;
-        if (ch == '}') EndBracket++;
-        if (ch == ']') EndSquareBracket++;
-    }
-}
-bool MissingItems(int x) {
-    return x % 2 == 0;
-}
-
-bool startsWithNumber(const string& json, int index) {
-    while (index < json.length() && isspace(static_cast<unsigned char>(json[index]))) {
-        index++;
-    }
-
-    if (index < json.length()) {
-        char c = json[index];
-        return isdigit(static_cast<unsigned char>(c)) || c == '-' || c == '+' || c == '.';
-    }
-
-    return false;
-}
 bool isUnquotedWord(const string& json, int index) {
-    int start = index;
-
-    while (index < json.length() && isspace(static_cast<unsigned char>(json[index]))) {
+    while (index < static_cast<int>(json.length()) &&
+           isspace(static_cast<unsigned char>(json[index]))) {
         index++;
     }
 
-    if (index >= json.length()) return false;
+    if (index >= static_cast<int>(json.length()) ||
+        json[index] == '"' || json[index] == '{' || json[index] == '[') {
+        return false;
+    }
 
-    if (json[index] == '"') return false;
+    // number
+    if (isdigit(static_cast<unsigned char>(json[index])) ||
+        json[index] == '-' || json[index] == '+') {
+        return false;
+    }
 
-    if (isalpha(static_cast<unsigned char>(json[index]))) {
-        string word;
-        while (index < json.length() &&
-               (isalpha(static_cast<unsigned char>(json[index])) ||
-                isdigit(static_cast<unsigned char>(json[index])) ||
-                json[index] == '_')) {
-            word += json[index];
-            index++;
+    // special words: true, false, null
+    string word;
+    while (index < static_cast<int>(json.length()) &&
+           (isalnum(static_cast<unsigned char>(json[index])) || json[index] == '_')) {
+        word += json[index++];
+    }
+
+    return !(word == "true" || word == "false" || word == "null");
+}
+
+static inline bool isEscaped(const string& s, size_t i) {
+    // returns true if s[i] is preceded by an odd number of backslashes
+    size_t cnt = 0;
+    size_t k = i;
+    while (k > 0 && s[--k] == '\\') ++cnt;
+    return (cnt % 2) == 1;
+}
+
+void validateJson(const string& json) {
+    int quoteCount = 0;
+    bool insideString = false;
+
+    for (size_t i = 0; i < json.length(); ++i) {
+        char c = json[i];
+
+        // Toggle only on unescaped quotes
+        if (c == '"' && !isEscaped(json, i)) {
+            insideString = !insideString;
+            quoteCount++;
+            // Empty string "" is valid, so no extra check here.
         }
-        if (word == "true" || word == "false" || word == "null") {
-            return false;
-        } else {
-            return true;  
+
+        if (!insideString) {
+            // Guard next char
+            char next = (i + 1 < json.size() ? json[i + 1] : '\0');
+
+            if ((c == '{' || c == ',' || c == ':') &&
+                (i + 1 < json.size()) && isUnquotedWord(json, static_cast<int>(i + 1))) {
+                cout << "Error: Unquoted word at line " << lineForChar[i + 1] << endl;
+                isValid = false;
+                return;
+            }
+
+            if ((c == ',' && (next == '}' || next == ']')) ||
+                ((c == '{' || c == '[') && next == ',')) {
+                cout << "Error: Invalid comma at line " << lineForChar[i] << endl;
+                isValid = false;
+                return;
+            }
         }
     }
 
-    return false;
-}
-bool validateJsonContent(const string& json) {
-    int doubleQuotes = 0;
-    bool firstErrorReported = false;
-
-    for (int i = 0; i < json.length(); i++) {
-        char current = json[i];
-
-        if (current == '"') {
-            doubleQuotes++;
-
-            if (doubleQuotes % 2 == 0 && i + 1 < json.length()) {
-                char next = json[i + 1];
-
-                if (next != ':' && next != ',' && next != ']' && next != '}') {
-                    Valid = false;
-                    if (!firstErrorReported) {
-                        cout << "Błąd: Nieprawidłowy znak po cudzysłowie w linii: "
-                             << lineNumberForChar[i + 1] << endl;
-                        firstErrorReported = true;
-                    }
-                }
-            }
-
-            if (i + 1 < json.length() && json[i + 1] == '"') {
-                Valid = false;
-                if (!firstErrorReported) {
-                    cout << "Błąd: Podwójny cudzysłów bez przecinka w linii: "
-                         << lineNumberForChar[i + 1] << endl;
-                    firstErrorReported = true;
-                }
-            }
-        }
-        if (current == '{' && startsWithNumber(json, i + 1)) {
-            Valid = false;
-            if (!firstErrorReported) {
-                cout << "Błąd: Nie można zaczynać zawartości obiektu od liczby! Linia: "
-                     << lineNumberForChar[i + 1] << endl;
-                firstErrorReported = true;
-            }
-        }
-        if (current == '{' && i + 1 < json.length() && json[i + 1] != '"' && json[i + 1] != ',') {
-            Valid = false;
-            if (!firstErrorReported) {
-                cout << "Błąd: Oczekiwano cudzysłowu po '{' w linii: "
-                     << lineNumberForChar[i + 1] << endl;
-                firstErrorReported = true;
-            }
-        }
-        if (current == '{' && i + 1 < json.length() && json[i + 1] == ',') {
-            Valid = false;
-            if (!firstErrorReported) {
-                cout << "Błąd: Nieprawidłowy przecinek przy '{' w linii: "
-                     << lineNumberForChar[i + 1] << endl;
-                firstErrorReported = true;
-            }
-
-        }
-        if (current == ',' && i + 1 < json.length() && json[i + 1] == '}') {
-            Valid = false;
-            if (!firstErrorReported) {
-                cout << "Błąd: Nieprawidłowy przecinek przy '}' w linii: "
-                     << lineNumberForChar[i + 1] << endl;
-                firstErrorReported = true;
-            }
-
-        }
-        if (current == '[' && i + 1 < json.length() && json[i + 1] == ',') {
-            Valid = false;
-            if (!firstErrorReported) {
-                cout << "Błąd: Nieprawidłowy przecinek przy '[' w linii: "
-                     << lineNumberForChar[i + 1] << endl;
-                firstErrorReported = true;
-            }
-
-        }
-        if (current == ',' && i + 1 < json.length() && json[i + 1] == ']') {
-            Valid = false;
-            if (!firstErrorReported) {
-                cout << "Błąd: Nieprawidłowy przecinek przy ']' w linii: "
-                     << lineNumberForChar[i + 1] << endl;
-                firstErrorReported = true;
-            }
-
-        }
-        if ((current == '{' || current == ',' || current == ':') && isUnquotedWord(json, i + 1)) {
-            Valid = false;
-            if (!firstErrorReported) {
-                cout << "Błąd: Słowo bez cudzysłowu w linii: "
-                    << lineNumberForChar[i + 1] << endl;
-                firstErrorReported = true;
-    }
-}
-                    
+    if (quoteCount % 2 != 0) {
+        cout << "Error: Odd number of quotation marks!" << endl;
+        isValid = false;
     }
 
-    return Valid;
+    checkBalanced(json, '{', '}', "brackets");
+    checkBalanced(json, '[', ']', "square brackets");
 }
 
-void handleOpen() {
+void handleOpen(const string& filename) {
+    ifstream file(filename);
     string line;
-    ifstream file("Json.txt");
-
-    if (!file.is_open()) {
-        cerr << "Błąd: Nie udało się otworzyć pliku!" << endl;
-        return;
-    }
-
     while (getline(file, line)) {
         cout << line << endl;
     }
-
-    file.close();
-}
-
-void handleValidation() {
-    string Clear_Read = ClearRead("Json.txt");
-    validateJsonContent(Clear_Read);
-
-    CounterForDualElements("Json.txt", Brackets, SquareBrackets, Q_marks);
-    CounterForStartOrEndingBrackets("Json.txt", OpenBracket, OpenSquareBracket, EndBracket, EndSquareBracket);
-
-    if (!MissingItems(Brackets)) {
-        cout << "Brackets not paired!" << endl;
-        Valid = false;
-    }
-    if (!MissingItems(SquareBrackets)) {
-        cout << "Square brackets not paired!" << endl;
-        Valid = false;
-    }
-    if (!MissingItems(Q_marks)) {
-        cout << "Quotes not paired!" << endl;
-        Valid = false;
-    }
-
-    if (OpenBracket != EndBracket) {
-        if( OpenBracket > EndBracket) {
-            cout << "brakuje '}' " << endl;
-            Valid = false;
-        } 
-        else {
-            cout << "brakuje '{' " << endl;
-            Valid = false;
-        }
-    }
-
-    if (OpenSquareBracket != EndSquareBracket) {
-        if( OpenSquareBracket > EndSquareBracket) {
-            cout << "brakuje ']' " << endl;
-            Valid = false;
-        } 
-        else {
-            cout << "brakuje '[' " << endl;
-            Valid = false;
-        }
-    }
-    cout << Clear_Read << endl;
-    cout << "Final result: " << (Valid ? "VALID" : "INVALID") << endl;
 }
 
 int main() {
-    showMenu();
+    char choice;
+    const string filename = "Json.txt";
 
-    while (true) {
-        cin >> choice;
+    cout << "Welcome to the JSON Parser!" << endl;
+    cout << "Press 'o' to open JSON file." << endl;
+    cout << "Press 'd' to validate JSON content." << endl;
 
+    while (cin >> choice) {
         if (choice == 'o') {
-            handleOpen();
+            handleOpen(filename);
         } else if (choice == 'd') {
-            handleValidation();
+            string json = readJsonFile(filename);
+            validateJson(json);
+            cout << json << endl;
+            cout << "Final result: " << (isValid ? "VALID" : "INVALID") << endl;
             break;
         } else {
-            cout << "Nieznana opcja! Wybierz 'o' lub 'd'." << endl;
+            cout << "Unknown option! Choose 'o' or 'd'." << endl;
         }
     }
 
     return 0;
 }
-

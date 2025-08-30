@@ -1,0 +1,6 @@
+{
+  "bool": true,
+  "int": [1, 2, 3],
+  "imie": ["Jan", "Ala", "Marek"],
+  "numer": ["1","2","3"]
+}
